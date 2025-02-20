@@ -13,18 +13,9 @@ import (
 	"github.com/danielrenes/htdl/internal/transform"
 )
 
-type stage struct {
-	name        string
-	transformer transform.Transformer
-}
-
 func Archive(dir string, link string) error {
 	slog.Info("Processing link", slog.String("link", link))
-	htmlData, err := http.Download(link)
-	if err != nil {
-		return fmt.Errorf("download %s: %w", link, err)
-	}
-	htmlRoot, err := html.Parse(bytes.NewReader(htmlData))
+	htmlRoot, err := downloadHTML(link)
 	if err != nil {
 		return err
 	}
@@ -32,33 +23,56 @@ func Archive(dir string, link string) error {
 	if err != nil {
 		return fmt.Errorf("parse URL from %s: %w", link, err)
 	}
-	stages := []stage{
-		{name: "resolve links", transformer: transform.ResolveLinks(baseURL)},
-		{name: "inline styles", transformer: transform.InlineStyles(baseURL)},
-		{name: "inline images", transformer: transform.InlineImages()},
-		{name: "remove tags", transformer: transform.RemoveTags("style", "link", "script")},
-		{name: "append inlined styles", transformer: transform.AppendInlinedStyles()},
+	pipeline := transform.NewPipeline(
+		transform.Named("resolve links", transform.ResolveLinks(baseURL)),
+		transform.Named("inline styles", transform.InlineStyles(baseURL)),
+		transform.Named("inline images", transform.InlineImages()),
+		transform.Named("remove tags", transform.RemoveTags("style", "link", "script")),
+		transform.Named("append inlined styles", transform.AppendInlinedStyles()),
+	)
+	if err := pipeline.Run(htmlRoot); err != nil {
+		return err
 	}
-	ctx := transform.NewTransformerContext()
-	for _, stage := range stages {
-		if err := stage.transformer.Transform(htmlRoot, ctx); err != nil {
-			return fmt.Errorf("%s: %w", stage.name, err)
-		}
-	}
-	title, err := htmlRoot.Find(html.IsTag("title"))
+	title, err := getTitle(htmlRoot)
 	if err != nil {
 		return fmt.Errorf("find title element: %w", err)
 	}
-	name := title.Text()
-	name = filepath.Join(dir, fmt.Sprintf("%s.html", name))
-	slog.Info("Writing file", slog.String("file", name))
-	fp, err := os.Create(name)
+	path := filepath.Join(dir, fmt.Sprintf("%s.html", title))
+	slog.Info("Writing file", slog.String("path", path))
+	if err := saveFile(path, htmlRoot); err != nil {
+		return err
+	}
+	return nil
+}
+
+func downloadHTML(link string) (*html.Node, error) {
+	htmlData, err := http.Download(link)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", name, err)
+		return nil, fmt.Errorf("download %s: %w", link, err)
+	}
+	htmlRoot, err := html.Parse(bytes.NewReader(htmlData))
+	if err != nil {
+		return nil, err
+	}
+	return htmlRoot, nil
+}
+
+func getTitle(node *html.Node) (string, error) {
+	title, err := node.Find(html.IsTag("title"))
+	if err != nil {
+		return "", fmt.Errorf("find title element: %w", err)
+	}
+	return title.Text(), nil
+}
+
+func saveFile(path string, node *html.Node) error {
+	fp, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
 	}
 	defer fp.Close()
-	if err := htmlRoot.Render(fp); err != nil {
-		return fmt.Errorf("render HTML to %s: %w", name, err)
+	if err := node.Render(fp); err != nil {
+		return fmt.Errorf("render HTML to %s: %w", path, err)
 	}
 	return nil
 }
