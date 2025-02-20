@@ -46,12 +46,12 @@ func AppendInlinedStyles() Transformer {
 
 func iterStyles(node *html.Node) iter.Seq2[string, error] {
 	return func(yield func(string, error) bool) {
-		for _, styleTag := range node.FindAll(html.IsTag("style")) {
+		for styleTag := range node.FindAll(html.IsTag("style")) {
 			if !yield(styleTag.Text(), nil) {
 				return
 			}
 		}
-		for _, linkTag := range node.FindAll(html.IsTag("link"), html.HasAttr("rel", "stylesheet")) {
+		for linkTag := range node.FindAll(html.IsTag("link"), html.HasAttr("rel", "stylesheet")) {
 			if href, ok := linkTag.GetAttr("href"); ok {
 				cssData, err := http.Download(href)
 				if !yield(string(cssData), err) {

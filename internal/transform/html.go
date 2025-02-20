@@ -35,7 +35,7 @@ func ResolveLinks(baseURL *url.URL) Transformer {
 }
 
 func resolveLink(node *html.Node, baseURL *url.URL, tag string, attr string) error {
-	for _, n := range node.FindAll(html.IsTag(tag)) {
+	for n := range node.FindAll(html.IsTag(tag)) {
 		if v, ok := n.GetAttr(attr); ok {
 			v, err := resolveRef(baseURL, v)
 			if err != nil {

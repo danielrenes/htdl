@@ -1,6 +1,7 @@
 package html_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -21,7 +22,7 @@ func TestParse(t *testing.T) {
 	bee.Equal(len(div.Children()), 2)
 	img := div.Children()[0]
 	bee.Equal(img.Tag(), "img")
-	attrEqual(bee, &img, "src", "logo.png")
+	attrEqual(bee, img, "src", "logo.png")
 	bee.Equal(img.Text(), "")
 	bee.Equal(len(img.Children()), 0)
 	p := div.Children()[1]
@@ -46,7 +47,7 @@ func TestFindAll(t *testing.T) {
 	s := `<div><a href="a.img"/><a href="b.img"/></div>`
 	div, err := html.Parse(strings.NewReader(s))
 	bee.Nil(err)
-	as := div.FindAll(html.IsTag("a"))
+	as := slices.Collect(div.FindAll(html.IsTag("a")))
 	bee.Equal(len(as), 2)
 	bee.Equal(as[0].Tag(), "a")
 	attrEqual(bee, as[0], "href", "a.img")

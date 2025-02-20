@@ -1,8 +1,8 @@
 package transform
 
 import (
+	"iter"
 	"log/slog"
-	"slices"
 	"strings"
 
 	"github.com/danielrenes/htdl/internal/html"
@@ -10,12 +10,15 @@ import (
 
 func InlineImages() Transformer {
 	return TransformerFunc(func(node *html.Node, ctx *TransformerContext) error {
-		nodes := make([]*html.Node, 0)
-		nodes = append(nodes, node.FindAll(html.IsTag("img"))...)
-		nodes = append(nodes, findSourceTagsWithImageType(node)...)
-		for _, n := range nodes {
-			if err := inlineImage(n); err != nil {
-				return err
+		iters := []iter.Seq[*html.Node]{
+			node.FindAll(html.IsTag("img")),
+			findSourceTagsWithImageType(node),
+		}
+		for _, iter := range iters {
+			for n := range iter {
+				if err := inlineImage(n); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -38,26 +41,35 @@ func inlineImage(node *html.Node) error {
 	return nil
 }
 
-func findSourceTagsWithImageType(node *html.Node) []*html.Node {
-	sources := node.FindAll(html.IsTag("source"))
-	return slices.DeleteFunc(sources, func(source *html.Node) bool {
-		if v, ok := source.GetAttr("type"); ok && strings.HasPrefix(v, "image/") {
-			return false
+func findSourceTagsWithImageType(node *html.Node) iter.Seq[*html.Node] {
+	return func(yield func(*html.Node) bool) {
+		for n := range node.FindAll(html.IsTag("source")) {
+			if v, ok := n.GetAttr("type"); ok && strings.HasPrefix(v, "image/") {
+				if !yield(n) {
+					return
+				}
+				continue
+			}
+			src, ok := getSource(n)
+			if !ok {
+				continue
+			}
+			idx := strings.LastIndex(src, ".")
+			if idx < 0 {
+				continue
+			}
+			ext := src[idx+1:]
+			if idx := strings.Index(ext, "?"); idx > 0 {
+				ext = ext[:idx]
+			}
+			if ext != "jpg" && ext != "jpeg" && ext != "png" && ext != "svg" {
+				continue
+			}
+			if !yield(n) {
+				return
+			}
 		}
-		src, ok := getSource(source)
-		if !ok {
-			return false
-		}
-		idx := strings.LastIndex(src, ".")
-		if idx < 0 {
-			return true
-		}
-		ext := src[idx+1:]
-		if idx := strings.Index(ext, "?"); idx > 0 {
-			ext = ext[:idx]
-		}
-		return ext != "jpg" && ext != "jpeg" && ext != "png" && ext != "svg"
-	})
+	}
 }
 
 func getSource(node *html.Node) (string, bool) {

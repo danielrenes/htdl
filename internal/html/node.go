@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"slices"
 	"strings"
 
@@ -83,10 +84,10 @@ func (n *Node) DeleteAttr(name string) {
 	})
 }
 
-func (n *Node) Children() []Node {
-	children := make([]Node, 0)
+func (n *Node) Children() []*Node {
+	children := make([]*Node, 0)
 	for child := n.node.FirstChild; child != nil; child = child.NextSibling {
-		children = append(children, Node{child})
+		children = append(children, &Node{child})
 	}
 	return children
 }
@@ -96,7 +97,7 @@ func (n *Node) AppendChild(child *Node) {
 }
 
 func (n *Node) RemoveAll(filters ...NodeFilter) {
-	for _, matchingNode := range n.FindAll(filters...) {
+	for matchingNode := range n.FindAll(filters...) {
 		parent := matchingNode.node.Parent
 		if parent == nil {
 			matchingNode.node = nil
@@ -107,22 +108,33 @@ func (n *Node) RemoveAll(filters ...NodeFilter) {
 }
 
 func (n *Node) Find(filters ...NodeFilter) (*Node, error) {
-	res := n.FindAll(filters...)
-	if len(res) == 0 {
+	var first *Node
+	iter := n.FindAll(filters...)
+	iter(func(node *Node) bool {
+		first = node
+		return false
+	})
+	if first == nil {
 		return nil, errors.New("no HTML nodes matching filters")
 	}
-	return res[0], nil
+	return first, nil
 }
 
-func (n *Node) FindAll(filters ...NodeFilter) []*Node {
-	nodes := make([]*Node, 0)
-	if n.eval(filters...) {
-		nodes = append(nodes, n)
+func (n *Node) FindAll(filters ...NodeFilter) iter.Seq[*Node] {
+	return func(yield func(*Node) bool) {
+		if n.eval(filters...) {
+			if !yield(n) {
+				return
+			}
+		}
+		for _, child := range n.Children() {
+			for node := range child.FindAll(filters...) {
+				if !yield(node) {
+					return
+				}
+			}
+		}
 	}
-	for _, child := range n.Children() {
-		nodes = append(nodes, child.FindAll(filters...)...)
-	}
-	return nodes
 }
 
 func (n *Node) eval(filters ...NodeFilter) bool {
