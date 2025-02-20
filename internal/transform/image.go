@@ -1,14 +1,11 @@
 package transform
 
 import (
-	"encoding/base64"
-	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
 
 	"github.com/danielrenes/htdl/internal/html"
-	"github.com/danielrenes/htdl/internal/http"
 )
 
 func InlineImages() Transformer {
@@ -31,29 +28,10 @@ func inlineImage(node *html.Node) error {
 		return nil
 	}
 	slog.Debug("Inline image", slog.String("src", src))
-	rawData, err := http.Download(src)
+	newSrc, err := downloadAndBase64Encode(src)
 	if err != nil {
 		return err
 	}
-	b64Data := base64.StdEncoding.EncodeToString(rawData)
-	idx := strings.LastIndex(src, ".")
-	if idx < 0 {
-		return fmt.Errorf("unknown extension: %s", src)
-	}
-	ext := src[idx+1:]
-	if idx := strings.Index(ext, "?"); idx > 0 {
-		ext = ext[:idx]
-	}
-	var mimeType string
-	switch ext {
-	case "jpg":
-		mimeType = "jpeg"
-	case "svg":
-		mimeType = "svg+xml"
-	default:
-		mimeType = ext
-	}
-	newSrc := fmt.Sprintf("data:image/%s;base64,%s", mimeType, b64Data)
 	node.DeleteAttr("src")
 	node.DeleteAttr("srcset")
 	node.SetAttr("src", newSrc)

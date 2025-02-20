@@ -1,7 +1,6 @@
 package transform
 
 import (
-	"encoding/base64"
 	"fmt"
 	"iter"
 	"net/url"
@@ -65,27 +64,26 @@ func iterStyles(node *html.Node) iter.Seq2[string, error] {
 
 func inlineLinks(baseURL *url.URL, style string) (string, error) {
 	var (
-		match int
-		arg   strings.Builder
-		sb    strings.Builder
+		search = []rune("url(")
+		char   rune
+		size   int
+		match  int
+		arg    strings.Builder
+		sb     strings.Builder
 	)
-	for i, w := 0, 0; i < len(style); i += w {
-		char, size := utf8.DecodeRuneInString(style[i:])
+	for i := 0; i < len(style); i += size {
+		char, size = utf8.DecodeRuneInString(style[i:])
 		if char == unicode.ReplacementChar {
 			continue
 		}
-		if (match == 0 && char == 'u') ||
-			(match == 1 && char == 'r') ||
-			(match == 2 && char == 'l') ||
-			(match == 3 && char == '(') {
+		if match < len(search) && char == search[match] {
 			_, _ = sb.WriteRune(char)
 			match++
-		} else if match == 4 {
+		} else if match == len(search) {
 			if char != ')' {
 				_, _ = arg.WriteRune(char)
 			} else {
-				link := arg.String()
-				link = strings.Trim(link, `'"`)
+				link := strings.Trim(arg.String(), `'"`)
 				if strings.HasPrefix(link, "data:") {
 					_, _ = sb.WriteString(link)
 				} else {
@@ -93,47 +91,20 @@ func inlineLinks(baseURL *url.URL, style string) (string, error) {
 					if err != nil {
 						return "", err
 					}
-					rawData, err := http.Download(url)
+					newSrc, err := downloadAndBase64Encode(url)
 					if err != nil {
 						return "", err
 					}
-					b64Data := base64.StdEncoding.EncodeToString(rawData)
-					idx := strings.LastIndex(url, ".")
-					if idx < 0 {
-						return "", fmt.Errorf("unknown extension: %s", url)
-					}
-					ext := url[idx+1:]
-					if idx := strings.Index(ext, "?"); idx > 0 {
-						ext = ext[:idx]
-					}
-					var dataType string
-					switch ext {
-					case "png", "jpg", "jpeg", "svg":
-						dataType = "image"
-					case "otf", "ttf", "woff", "woff2":
-						dataType = "font"
-					default:
-						dataType = "text"
-					}
-					var mimeType string
-					switch ext {
-					case "jpg":
-						mimeType = "jpeg"
-					case "svg":
-						mimeType = "svg+xml"
-					default:
-						mimeType = ext
-					}
-					_, _ = fmt.Fprintf(&sb, "data:%s/%s;base64,%s)", dataType, mimeType, b64Data)
+					_, _ = fmt.Fprintf(&sb, "%s)", newSrc)
 				}
 				match = 0
 				arg.Reset()
 			}
 		} else {
 			match = 0
+			arg.Reset()
 			_, _ = sb.WriteRune(char)
 		}
-		w = size
 	}
 	return sb.String(), nil
 }
