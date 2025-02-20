@@ -1,6 +1,6 @@
 # htdl
 
-A command-line utility to download a complete web page as a single html file.
+A command-line utility to download a web page as a single html file.
 
 Supports inlining:
 
@@ -11,7 +11,7 @@ Supports inlining:
 ## Installation
 
 ```shell
-go install github.com/danielrenes/htdl@latest
+go install github.com/danielrenes/htdl/cmd/htdl@latest
 ```
 
 ## Usage

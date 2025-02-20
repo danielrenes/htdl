@@ -1,4 +1,4 @@
-package main
+package htdl_test
 
 import (
 	"fmt"
@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/danielrenes/bee"
+	"github.com/danielrenes/htdl/internal/htdl"
+	"github.com/danielrenes/htdl/internal/html"
 )
 
 func TestArchive(t *testing.T) {
@@ -25,7 +27,7 @@ func TestArchive(t *testing.T) {
             }
             @font-face {
                 font-family: 'MyFont';
-                src: url('data:font/ttf;base64,%s') format('truetype');
+                src: url(data:font/ttf;base64,%s) format('truetype');
             }
         </style>
     </head>
@@ -37,16 +39,21 @@ func TestArchive(t *testing.T) {
     </body>
 </html>
 `)
+	fs := http.FileServer(http.Dir("testdata/server"))
+	srv := http.Server{Addr: ":8000", Handler: fs}
+	go func() {
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			t.Logf("run server: %v", err)
+		}
+	}()
 	b64Font, err := os.ReadFile("testdata/base64/font.b64")
 	bee.Nil(err)
 	b64Image, err := os.ReadFile("testdata/base64/img.b64")
 	bee.Nil(err)
-	fs := http.FileServer(http.Dir("testdata/server"))
-	go http.ListenAndServe(":8000", fs)
 	outDir := filepath.Join(os.TempDir(), "out")
 	err = os.MkdirAll(outDir, 0755)
 	bee.Nil(err)
-	err = Archive(outDir, "http://localhost:8000/index.html")
+	err = htdl.Archive(outDir, "http://localhost:8000/index.html")
 	bee.Nil(err)
 	entries, err := os.ReadDir(outDir)
 	bee.Nil(err)
@@ -56,11 +63,19 @@ func TestArchive(t *testing.T) {
 	bee.Equal(renderHTML(bee, string(data)), renderHTML(bee, fmt.Sprintf(expected, b64Font, b64Image)))
 	err = os.RemoveAll(outDir)
 	bee.Nil(err)
+	err = srv.Close()
+	bee.Nil(err)
 }
 
 func renderHTML(bee *bee.Bee, s string) string {
-	root, err := ParseHTML(strings.NewReader(s))
+	root, err := html.Parse(strings.NewReader(s))
 	bee.Nil(err)
 	html := root.RenderString()
-	return regexp.MustCompile("(?s)>.*?<").ReplaceAllString(html, "><")
+	lineStartSpaces := regexp.MustCompile("\\n\\s*")
+	lineEndSpaces := regexp.MustCompile("\\s*\\n")
+	spacesBetweenTags := regexp.MustCompile("(?s)>\\s*<")
+	html = lineStartSpaces.ReplaceAllString(html, "\n")
+	html = lineEndSpaces.ReplaceAllString(html, "\n")
+	html = spacesBetweenTags.ReplaceAllString(html, "><")
+	return html
 }
